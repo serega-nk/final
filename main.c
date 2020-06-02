@@ -137,6 +137,13 @@ static void client_handler(int cs)
         write(cs, NOT_FOUND, sizeof(NOT_FOUND));
         return ;
     }
+
+    if (strcmp(uri, "/") == 0)
+    {
+        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
+        return ;
+    }
+
     char *ptr = path;
     strcat(ptr, DIR);
     ptr += strlen(DIR);
