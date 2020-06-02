@@ -47,12 +47,14 @@ void parse_opt(int argc, char *argv[])
             break;
         }
     }
-    if (!HOST)
-        HOST = strdup("127.0.0.1");
-    if (!PORT)
-        PORT = strdup("8080");
-    if (!DIR)
-        DIR = strdup("/");
+    if (!HOST || !PORT || !DIR)
+        exit(-1);
+    // if (!HOST)
+    //     HOST = strdup("127.0.0.1");
+    // if (!PORT)
+    //     PORT = strdup("8080");
+    // if (!DIR)
+    //     DIR = strdup("/");
 }
 
 
