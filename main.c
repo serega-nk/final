@@ -138,11 +138,11 @@ static void client_handler(int cs)
         return ;
     }
 
-    if (strcmp(uri, "/") == 0)
-    {
-        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
-        return ;
-    }
+    // if (strcmp(uri, "/") == 0)
+    // {
+    //     write(cs, NOT_FOUND, sizeof(NOT_FOUND));
+    //     return ;
+    // }
 
     char *ptr = path;
     strcat(ptr, DIR);
@@ -155,6 +155,20 @@ static void client_handler(int cs)
     // write(cs, path, strlen(path));
     // write(cs, "\r\n\r\n", 4);
 
+    struct stat st;
+    if (-1 == stat(path, &st))
+    {
+        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
+        return ;
+    }
+
+    if (!S_ISREG(st.st_mode))
+    {
+        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
+        return ;
+    }
+    ssize_t length = st.st_size;
+
     FILE *fp = fopen(path, "r");
     if (!fp)
     {
@@ -162,9 +176,7 @@ static void client_handler(int cs)
         return ;
     }
 
-    struct stat st;
-    stat(path, &st);
-    ssize_t length = st.st_size;
+
 
     size_t ret;
     char OK[] = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n";
@@ -181,7 +193,7 @@ static void client_handler(int cs)
 int main(int argc, char *argv[]) {
 
     parse_opt(argc, argv);
-
+    
     skeleton_daemon();
 
     chdir(DIR);
