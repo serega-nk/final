@@ -47,14 +47,14 @@ void parse_opt(int argc, char *argv[])
             break;
         }
     }
-    if (!HOST || !PORT || !DIR)
-        exit(-1);
-    // if (!HOST)
-    //     HOST = strdup("127.0.0.1");
-    // if (!PORT)
-    //     PORT = strdup("8080");
-    // if (!DIR)
-    //     DIR = strdup("/");
+    // if (!HOST || !PORT || !DIR)
+    //     exit(-1);
+    if (!HOST)
+        HOST = strdup("127.0.0.1");
+    if (!PORT)
+        PORT = strdup("8080");
+    if (!DIR)
+        DIR = strdup("/");
 }
 
 
@@ -200,6 +200,12 @@ static void client_handler(int cs)
 int main(int argc, char *argv[]) {
 
     parse_opt(argc, argv);
+
+    FILE *log = fopen("/tmp/1.log", "a");
+    fprintf(log, "HOST: %s\n", HOST);
+    fprintf(log, "PORT: %s\n", PORT);
+    fprintf(log, "DIR: %s\n", DIR);
+    fclose(log);
     
     skeleton_daemon();
 
