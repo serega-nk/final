@@ -131,6 +131,11 @@ static void client_handler(int cs)
     char uri[BUFSIZ + 1];
     ssize_t len = read(cs, buf, BUFSIZ);
     buf[len] = '\0';
+
+    FILE *log = fopen("/tmp/1.log", "a");
+    fwrite(buf, 1, len, log);
+    fclose(log);
+
         
     if (1 != sscanf(buf, "GET %s HTTP/1.0", &uri))
     {
