@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
 
     parse_opt(argc, argv);
 
-    //skeleton_daemon();
+    skeleton_daemon();
 
     chdir(DIR);
 
