@@ -134,14 +134,15 @@ static void client_handler(int cs)
     ssize_t len = read(cs, buf, BUFSIZ);
     buf[len] = '\0';
 
-    FILE *log = fopen("/tmp/1.log", "a");
+    FILE *log = fopen("/tmp/2.log", "a");
     fwrite(buf, 1, len, log);
     fclose(log);
 
-        
+    char NOT_FOUND[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n";
+
     if (1 != sscanf(buf, "GET %s HTTP/1.0", &uri))
     {
-        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
+        // write(cs, NOT_FOUND, sizeof(NOT_FOUND) - 1);
         return ;
     }
 
