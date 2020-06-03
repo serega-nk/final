@@ -443,8 +443,9 @@ static void run_server(int num_workers)
             perror("accept");
             exit(EXIT_FAILURE);
         }
-        sock_fd_write(workers[worker++ % num_workers], "1", 1, cs);
+        sock_fd_write(workers[worker], "1", 1, cs);
         close(cs);
+        worker = (worker + 1) % num_workers;
 
         // pid_t pid = fork();
         // if (-1 == pid)
