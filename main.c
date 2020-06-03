@@ -115,7 +115,7 @@ static void skeleton_daemon()
     /* or another appropriated directory */
     chdir("/");
 
-    // close(STDIN_FILENO);
+    close(STDIN_FILENO);
     // close(STDOUT_FILENO);
     // close(STDERR_FILENO);
 
@@ -128,6 +128,107 @@ static void skeleton_daemon()
 
     // /* Open the log file */
     // openlog ("firstdaemon", LOG_PID, LOG_DAEMON);
+}
+
+
+// https://keithp.com/blogs/fd-passing/
+
+ssize_t sock_fd_write(int sock, void *buf, ssize_t buflen, int fd)
+{
+    ssize_t     size;
+    struct msghdr   msg;
+    struct iovec    iov;
+    union {
+        struct cmsghdr  cmsghdr;
+        char        control[CMSG_SPACE(sizeof (int))];
+    } cmsgu;
+    struct cmsghdr  *cmsg;
+
+    iov.iov_base = buf;
+    iov.iov_len = buflen;
+
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    if (fd != -1) {
+        msg.msg_control = cmsgu.control;
+        msg.msg_controllen = sizeof(cmsgu.control);
+
+        cmsg = CMSG_FIRSTHDR(&msg);
+        cmsg->cmsg_len = CMSG_LEN(sizeof (int));
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type = SCM_RIGHTS;
+
+        printf ("passing fd %d\n", fd);
+        *((int *) CMSG_DATA(cmsg)) = fd;
+    } else {
+        msg.msg_control = NULL;
+        msg.msg_controllen = 0;
+        printf ("not passing fd\n");
+    }
+
+    size = sendmsg(sock, &msg, 0);
+
+    if (size < 0)
+        perror ("sendmsg");
+    return size;
+}
+
+
+ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
+{
+    ssize_t     size;
+
+    if (fd) {
+        struct msghdr   msg;
+        struct iovec    iov;
+        union {
+            struct cmsghdr  cmsghdr;
+            char        control[CMSG_SPACE(sizeof (int))];
+        } cmsgu;
+        struct cmsghdr  *cmsg;
+
+        iov.iov_base = buf;
+        iov.iov_len = bufsize;
+
+        msg.msg_name = NULL;
+        msg.msg_namelen = 0;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = cmsgu.control;
+        msg.msg_controllen = sizeof(cmsgu.control);
+        size = recvmsg (sock, &msg, 0);
+        if (size < 0) {
+            perror ("recvmsg");
+            exit(1);
+        }
+        cmsg = CMSG_FIRSTHDR(&msg);
+        if (cmsg && cmsg->cmsg_len == CMSG_LEN(sizeof(int))) {
+            if (cmsg->cmsg_level != SOL_SOCKET) {
+                fprintf (stderr, "invalid cmsg_level %d\n",
+                     cmsg->cmsg_level);
+                exit(1);
+            }
+            if (cmsg->cmsg_type != SCM_RIGHTS) {
+                fprintf (stderr, "invalid cmsg_type %d\n",
+                     cmsg->cmsg_type);
+                exit(1);
+            }
+
+            *fd = *((int *) CMSG_DATA(cmsg));
+            printf ("received fd %d\n", *fd);
+        } else
+            *fd = -1;
+    } else {
+        size = read (sock, buf, bufsize);
+        if (size < 0) {
+            perror("read");
+            exit(1);
+        }
+    }
+    return size;
 }
 
 
@@ -261,8 +362,59 @@ static int connect_handler(int cs)
 }
 
 
-static void run_server()
+static void worker_handler(int sock)
 {
+    int fd;
+    char buf[16];
+    ssize_t size;
+
+    sleep(1);
+    while (1)
+    {
+        size = sock_fd_read(sock, buf, sizeof(buf), &fd);
+        if (size <= 0)
+            break;        
+        printf("worker %d read %d\n", sock, size);
+        if (fd != -1) {
+            int ret = connect_handler(fd);
+            shutdown(fd, SHUT_RDWR);
+            close(fd);
+            printf("worker %d ret = %d\n", sock, ret);
+        }
+    }
+}
+
+
+static void run_server(int num_workers)
+{
+    int workers[num_workers];
+    
+    int i = 0;
+    while (i < num_workers)
+    {
+        int sv[2];
+        if (socketpair(AF_LOCAL, SOCK_STREAM, 0, sv) < 0)
+        {
+            perror("socketpair");
+            exit(EXIT_FAILURE);
+        }
+        pid_t pid = fork();
+        if (-1 == pid)
+        {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+        if (0 == pid)
+        {
+            close(sv[0]);
+            worker_handler(sv[1]);
+            exit(EXIT_FAILURE);
+        }
+        close(sv[1]);
+        workers[i] = sv[0];
+        i++;
+    }
+    
     struct sockaddr_in local;
 
 	int ss = socket(AF_INET, SOCK_STREAM, 0);
@@ -282,6 +434,7 @@ static void run_server()
 		exit(EXIT_FAILURE);
 	}
 
+    int worker = 0;
     while (1) 
     {
         int cs = accept(ss, NULL, NULL);
@@ -290,25 +443,26 @@ static void run_server()
             perror("accept");
             exit(EXIT_FAILURE);
         }
+        sock_fd_write(workers[worker++ % num_workers], "1", 1, cs);
 
-        pid_t pid = fork();
-        if (-1 == pid)
-        {
-            perror("fork");
-            exit(EXIT_FAILURE);
-        }
+        // pid_t pid = fork();
+        // if (-1 == pid)
+        // {
+        //     perror("fork");
+        //     exit(EXIT_FAILURE);
+        // }
         
-        if (0 == pid)
-        {
-            int ret = connect_handler(cs);        
-            shutdown(cs, SHUT_RDWR);
-            close(cs);
-            exit(ret);
-        }
-        else
-        {
-            close(cs);
-        }
+        // if (0 == pid)
+        // {
+        //     int ret = connect_handler(cs);        
+        //     shutdown(cs, SHUT_RDWR);
+        //     close(cs);
+        //     exit(ret);
+        // }
+        // else
+        // {
+        //     close(cs);
+        // }
     }
     close(ss);
 }
@@ -330,7 +484,7 @@ int main(int argc, char **argv)
 
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    run_server();
+    run_server(4);
 
     free(HOST);
     free(PORT);
