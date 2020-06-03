@@ -39,19 +39,19 @@ static void parse_opt(int argc, char *argv[])
         }
     }
     if (!HOST)
-        HOST = strdup("127.0.0.1");
+        HOST = strdup("0.0.0.0");
     if (!PORT)
-        PORT = strdup("8080");
+        PORT = strdup("12345");
     if (!DIR)
-        DIR = strdup("/");
+        DIR = strdup("/tmp");
 }
 
 
 static void redirect_stdout_logfile()
 {
     char path[BUFSIZ];
-    snprintf(path, BUFSIZ, "/tmp/%d.log", getpid());
-    int fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0666);
+    // snprintf(path, BUFSIZ, "/tmp/%d.log", getpid());
+    int fd = open("/tmp/1.log", O_CREAT | O_WRONLY | O_APPEND, 0666);
     dup2(fd, STDOUT_FILENO);
     //dup2(fd, STDERR_FILENO);
 }
@@ -130,11 +130,11 @@ static void signal_handler(int sig)
 {
     printf("=== SIGCHLD = %d\n", sig);
 
-    int status = 0;
-    pid_t ret = waitpid(-1, &status, 0);
-    printf("status = %d\n", status);
-    printf("ret = %d\n", ret);
-    printf("===\n");
+    // int status = 0;
+    // pid_t ret = waitpid(-1, &status, 0);
+    // printf("status = %d\n", status);
+    // printf("ret = %d\n", ret);
+    // printf("===\n");
 }
 
 
@@ -164,15 +164,41 @@ static int connect_handler(int cs)
         return (EXIT_FAILURE);
     }
     char *ptr0 = buf + 4;
-    char *ptr1 = strchr(ptr0, ' ');
+    char *ptr1 = NULL;
+    char *ptr2 = NULL;
+
+    size_t n = 4;
+    while (n < size && !ptr1)
+    {
+        if (!ptr2 && buf[n] == '?')
+            ptr2 = &buf[n];
+        if (!ptr1 && buf[n] == ' ')
+            ptr1 = &buf[n];
+        n++;
+    }
+
     if (!ptr1)
     {
         printf("!!! ERROR GET #2\n");
         return (EXIT_FAILURE);
     }
-    char *path = strndup(ptr0, ptr1 - ptr0);
+    
+    char *path;
+    char *query;
+    
+    if (!ptr2)
+    {
+        path = strndup(ptr0, ptr1 - ptr0);
+        query = strdup("");
+    }
+    else
+    {
+        path = strndup(ptr0, ptr2 - ptr0);
+        query = strndup(ptr2, ptr1 - ptr2);
+    }
     
     printf("=== PATH = %s\n", path);
+    printf("=== QUERY = %s\n", query);
 
     if (0 != strncmp(ptr1 + 1, "HTTP/1.0", 8) && 0 != strncmp(ptr1 + 1, "HTTP/1.1", 8))
     {
@@ -224,6 +250,7 @@ static int connect_handler(int cs)
     close(fd);
 
     free(path);
+    free(query);
 
     return (EXIT_SUCCESS);
 }
@@ -281,7 +308,7 @@ static void run_server()
 int main(int argc, char **argv)
 {
     parse_opt(argc, argv);
-    redirect_stdout_logfile();
+    //redirect_stdout_logfile();
     change_root_directory();
     skeleton_daemon();
     
