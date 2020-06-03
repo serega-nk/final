@@ -51,9 +51,14 @@ static void redirect_stdout_logfile()
 {
     char path[BUFSIZ];
     // snprintf(path, BUFSIZ, "/tmp/%d.log", getpid());
-    int fd = open("/tmp/1.log", O_CREAT | O_WRONLY | O_APPEND, 0666);
+    int fd = open("1.log", O_CREAT | O_WRONLY | O_APPEND | O_SYNC, 0666);
+    if (fd == -1)
+    {
+        perror("open log");
+        exit(EXIT_FAILURE);
+    }
     dup2(fd, STDOUT_FILENO);
-    //dup2(fd, STDERR_FILENO);
+    dup2(fd, STDERR_FILENO);
 }
 
 
@@ -110,7 +115,7 @@ static void skeleton_daemon()
     /* or another appropriated directory */
     chdir("/");
 
-    close(STDIN_FILENO);
+    // close(STDIN_FILENO);
     // close(STDOUT_FILENO);
     // close(STDERR_FILENO);
 
@@ -312,7 +317,7 @@ static void run_server()
 int main(int argc, char **argv)
 {
     parse_opt(argc, argv);
-    //redirect_stdout_logfile();
+    redirect_stdout_logfile();
     change_root_directory();
     skeleton_daemon();
     
@@ -322,6 +327,8 @@ int main(int argc, char **argv)
     printf("HOST = %s\n", HOST);
     printf("PORT = %s\n", PORT);
     printf("DIR = %s\n", DIR);
+
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     run_server();
 
