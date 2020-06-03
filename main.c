@@ -130,11 +130,11 @@ static void signal_handler(int sig)
 {
     printf("=== SIGCHLD = %d\n", sig);
 
-    // int status = 0;
-    // pid_t ret = waitpid(-1, &status, 0);
-    // printf("status = %d\n", status);
-    // printf("ret = %d\n", ret);
-    // printf("===\n");
+    int status = 0;
+    pid_t ret = waitpid(-1, &status, 0);
+    printf("status = %d\n", status);
+    printf("ret = %d\n", ret);
+    printf("===\n");
 }
 
 
