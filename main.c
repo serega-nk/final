@@ -1,20 +1,9 @@
-// #include <stdio.h>
-
-
-// int main()
-// {
-//     puts("Hello world!sss\n");
-//     return 0;
-// }
-
-#include <stdio.h>
 #include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-#include <sys/socket.h>
-#include <netinet/ip.h>
-#include <arpa/inet.h>
+#include <fcntl.h>
+#include <string.h>
 
 #include <signal.h>
 #include <sys/wait.h>
@@ -22,16 +11,18 @@
 #include <sys/stat.h>
 
 
-static const char OK[] = "HTTP/1.0 200 OK\r\nContent-length: %d\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n%s";
-static const char NOT_FOUND[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n";
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
 
 
-char *HOST = NULL;
-char *PORT = NULL;
-char *DIR = NULL;
+
+static char *HOST = NULL;
+static char *PORT = NULL;
+static char *DIR = NULL;
 
 
-void parse_opt(int argc, char *argv[])
+static void parse_opt(int argc, char *argv[])
 {
     int opt;
     while ((opt = getopt(argc, argv, "h:p:d:")) != -1) {
@@ -47,8 +38,6 @@ void parse_opt(int argc, char *argv[])
             break;
         }
     }
-    // if (!HOST || !PORT || !DIR)
-    //     exit(-1);
     if (!HOST)
         HOST = strdup("127.0.0.1");
     if (!PORT)
@@ -57,6 +46,26 @@ void parse_opt(int argc, char *argv[])
         DIR = strdup("/");
 }
 
+
+static void redirect_stdout_logfile()
+{
+    char path[BUFSIZ];
+    snprintf(path, BUFSIZ, "/tmp/%d.log", getpid());
+    int fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0666);
+    dup2(fd, STDOUT_FILENO);
+    //dup2(fd, STDERR_FILENO);
+}
+
+
+static void change_root_directory()
+{
+    chdir(DIR);
+    if (chroot(DIR) != 0)
+    {
+        perror("chroot");
+        exit(EXIT_FAILURE);
+    }
+}
 
 
 static void skeleton_daemon()
@@ -101,124 +110,127 @@ static void skeleton_daemon()
     /* or another appropriated directory */
     chdir("/");
 
+    close(STDIN_FILENO);
+    // close(STDOUT_FILENO);
+    // close(STDERR_FILENO);
+
     /* Close all open file descriptors */
-    int x;
-    for (x = sysconf(_SC_OPEN_MAX); x>=0; x--)
-    {
-        close (x);
-    }
+    // int x;
+    // for (x = sysconf(_SC_OPEN_MAX); x>=0; x--)
+    // {
+    //     close (x);
+    // }
 
     // /* Open the log file */
     // openlog ("firstdaemon", LOG_PID, LOG_DAEMON);
 }
 
 
-static void child_handler(int sig)
+static void signal_handler(int sig)
 {
-
-    printf("SIGCHLD = %d\n", sig);
+    printf("=== SIGCHLD = %d\n", sig);
 
     int status = 0;
     pid_t ret = waitpid(-1, &status, 0);
     printf("status = %d\n", status);
     printf("ret = %d\n", ret);
-
+    printf("===\n");
 }
 
-static void client_handler(int cs)
+
+static int connect_handler(int cs)
 {
-
     char buf[BUFSIZ + 1];
-    char path[BUFSIZ + 1];
-    char uri[BUFSIZ + 1];
-    ssize_t len = read(cs, buf, BUFSIZ);
-    buf[len] = '\0';
 
-    FILE *log = fopen("/tmp/2.log", "a");
-    fwrite(buf, 1, len, log);
-    fclose(log);
+    // REQUEST
 
-    char NOT_FOUND[] = "HTTP/1.0 404 NOT FOUND\r\nContent-Type: text/html\r\n\r\n";
-
-    if (1 != sscanf(buf, "GET %s HTTP/1.0", &uri))
+    size_t size = 0;
+    while (size < BUFSIZ)
     {
-        // write(cs, NOT_FOUND, sizeof(NOT_FOUND) - 1);
-        return ;
+        ssize_t ret = read(cs, buf + size, BUFSIZ - size);
+        if (ret > 0)
+        {
+            size += ret;
+            buf[size] = '\0';
+            if (strstr(buf, "\r\n\r\n") != NULL || strstr(buf, "\n\n") != NULL)
+                break ;
+        }
+    }
+    
+    printf(">>> GET REQUEST\n%s\n<<< GET REQUEST\n", buf);
+    if (0 != strncmp(buf, "GET ", 4))
+    {
+        printf("!!! ERROR GET #1\n");
+        return (EXIT_FAILURE);
+    }
+    char *ptr0 = buf + 4;
+    char *ptr1 = strchr(ptr0, ' ');
+    if (!ptr1)
+    {
+        printf("!!! ERROR GET #2\n");
+        return (EXIT_FAILURE);
+    }
+    char *path = strndup(ptr0, ptr1 - ptr0);
+    
+    printf("=== PATH = %s\n", path);
+
+    if (0 != strncmp(ptr1 + 1, "HTTP/1.0", 8) && 0 != strncmp(ptr1 + 1, "HTTP/1.1", 8))
+    {
+        printf("!!! ERROR GET #3\n");
+        return (EXIT_FAILURE);
+    }
+    ptr1 += 1 + 8;
+    if (0 != strncmp(ptr1, "\r\n", 2) && 0 != strncmp(ptr1, "\n", 1))
+    {
+        printf("!!! ERROR GET #4\n");
+        return (EXIT_FAILURE);
+    }
+    if (strstr(ptr1, "\r\n\r\n") == NULL && strstr(ptr1, "\n\n") == NULL)
+    {
+        printf("!!! ERROR GET #5\n");
+        return (EXIT_FAILURE);
     }
 
-    // if (strcmp(uri, "/") == 0)
-    // {
-    //     write(cs, NOT_FOUND, sizeof(NOT_FOUND));
-    //     return ;
-    // }
-
-    char *ptr = path;
-    strcat(ptr, DIR);
-    ptr += strlen(DIR);
-    strcat(ptr, "/./");
-    ptr += strlen("/./");
-    strcat(ptr, uri);
-    ptr += strlen(uri);
-
-    // write(cs, path, strlen(path));
-    // write(cs, "\r\n\r\n", 4);
+    // RESPONSE
 
     struct stat st;
     if (-1 == stat(path, &st))
     {
-        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
-        return ;
+        printf("!!! ERROR GET STAT\n");
+        dprintf(cs, "HTTP/1.0 404 Not Found\r\n\r\n");
+        return (EXIT_FAILURE);
     }
 
     if (!S_ISREG(st.st_mode))
     {
-        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
-        return ;
-    }
-    ssize_t length = st.st_size;
-
-    FILE *fp = fopen(path, "r");
-    if (!fp)
-    {
-        write(cs, NOT_FOUND, sizeof(NOT_FOUND));
-        return ;
+        printf("!!! ERROR GET S_ISREG\n");
+        dprintf(cs, "HTTP/1.0 404 Not Found\r\n\r\n");
+        return (EXIT_FAILURE);
     }
 
+    dprintf(cs, "HTTP/1.0 200 OK\r\nContent-Length = %d\r\nContent-Type: text/html\r\n\r\n", st.st_size);
 
+    printf("open path = %s\n", path);
 
-    size_t ret;
-    char OK[] = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n";
-
-    //ret = snprintf(buf, BUFSIZ, "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n");
-    write(cs, OK, sizeof(OK));
-    while ((ret = fread(buf, sizeof(char), BUFSIZ, fp)) > 0)
+    int fd = open(path, O_RDONLY);
+    while (1)
     {
+        ssize_t ret = read(fd, buf, BUFSIZ);
+        if (ret <= 0) break ;
         write(cs, buf, ret);
+        printf("write ret = %d\n", ret);
     }
-    write(cs, "\r\n\r\n", 4);
+    printf("close path = %s\n", path);
+    close(fd);
+
+    free(path);
+
+    return (EXIT_SUCCESS);
 }
 
-int main(int argc, char *argv[]) {
 
-    parse_opt(argc, argv);
-
-    FILE *log = fopen("/tmp/1.log", "a");
-    fprintf(log, "HOST: %s\n", HOST);
-    fprintf(log, "PORT: %s\n", PORT);
-    fprintf(log, "DIR: %s\n", DIR);
-    fclose(log);
-    
-    skeleton_daemon();
-
-    chdir(DIR);
-
-    signal(SIGCHLD, child_handler);
-
-    printf("HOST: %s\n", HOST);
-    printf("PORT: %s\n", PORT);
-    printf("DIR: %s\n", DIR);
-
-
+static void run_server()
+{
     struct sockaddr_in local;
 
 	int ss = socket(AF_INET, SOCK_STREAM, 0);
@@ -226,16 +238,15 @@ int main(int argc, char *argv[]) {
 	local.sin_port = htons(atoi(PORT));
 	local.sin_family = AF_INET;
 
-
 	if (-1 == bind(ss, (struct sockaddr*) &local, sizeof(local)))
 	{
-		printf("bind error\n");
+		perror("bind");
 		exit(EXIT_FAILURE);
 	}
 
 	if (-1 == listen(ss, 5))
 	{
-		printf("listen error\n");
+		perror("listen");
 		exit(EXIT_FAILURE);
 	}
 
@@ -244,27 +255,45 @@ int main(int argc, char *argv[]) {
         int cs = accept(ss, NULL, NULL);
         if (-1 == cs)
         {
-            printf("accept error\n");
+            perror("accept");
             exit(EXIT_FAILURE);
         }
 
         pid_t pid = fork();
         if (-1 == pid)
         {
-            close(cs);
-            continue;
+            perror("fork");
+            exit(EXIT_FAILURE);
         }
+        
         if (0 == pid)
         {
-            client_handler(cs);        
+            int ret = connect_handler(cs);        
             shutdown(cs, SHUT_RDWR);
             close(cs);
-            return EXIT_SUCCESS;
-        }
-    
+            exit(ret);
+        }    
     }
     close(ss);
+}
+
+
+int main(int argc, char **argv)
+{
+    parse_opt(argc, argv);
+    redirect_stdout_logfile();
+    change_root_directory();
+    skeleton_daemon();
     
+    signal(SIGCHLD, signal_handler);
+
+    printf("=== START\n");
+    printf("HOST = %s\n", HOST);
+    printf("PORT = %s\n", PORT);
+    printf("DIR = %s\n", DIR);
+
+    run_server();
+
     free(HOST);
     free(PORT);
     free(DIR);
