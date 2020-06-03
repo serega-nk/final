@@ -299,7 +299,11 @@ static void run_server()
             shutdown(cs, SHUT_RDWR);
             close(cs);
             exit(ret);
-        }    
+        }
+        else
+        {
+            close(cs);
+        }
     }
     close(ss);
 }
